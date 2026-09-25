@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: shopkart
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: shopkart
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migrations in order
+        run: |
+          for f in $(ls migrations/*.sql | sort); do
+            echo "applying $f"
+            psql -v ON_ERROR_STOP=1 -1 -f "$f"
+            v=$(basename "$f" | cut -d_ -f1)
+            psql -v ON_ERROR_STOP=1 -c "INSERT INTO schema_migrations (version) VALUES ('$v')"
+          done
+      - name: Show schema
+        run: psql -c '\d+ users' -c '\d+ orders'
+      # TODO: query checks (PREPARE each src/queries/*.sql against the migrated schema)
